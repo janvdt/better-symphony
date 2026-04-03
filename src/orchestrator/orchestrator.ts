@@ -671,6 +671,11 @@ export class Orchestrator {
             issue_identifier: issue.identifier,
             state: freshIssue!.state,
           });
+
+          // Transition issue to Done if not already in a terminal state
+          if (!isTerminal) {
+            await this.transitionIssueToDone(issue);
+          }
         } else {
           runAttempt.status = "Failed";
           runAttempt.error = isError
