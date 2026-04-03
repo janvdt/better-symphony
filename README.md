@@ -2,16 +2,6 @@
 
 A headless coding agent orchestrator that polls issue trackers (Linear, GitHub Issues, GitHub PRs) for work items, dispatches AI agents (Claude Code, OpenCode), and manages the full development lifecycle.
 
-## Installation
-
-```bash
-# Run directly with bunx (no install needed)
-bunx better-symphony
-
-# Or install globally
-bun install -g better-symphony
-```
-
 ## Quick Start
 
 > **Important:** Symphony is run from **your project's directory**. Your project should have a `workflows/` folder containing your workflow `.md` files. Symphony auto-detects `workflows/*.md` in the current working directory.
@@ -23,11 +13,10 @@ cd ~/your-project          # Your project with a workflows/ directory
 export LINEAR_API_KEY=lin_api_xxxxx
 
 # Run all workflows in workflows/
-bunx better-symphony
+bun run /path/to/better-symphony/src/cli.ts
 
 # Or run specific workflow(s)
-bunx better-symphony -w workflows/dev.md
-bunx better-symphony -w workflows/prd.md workflows/dev.md workflows/ralph.md
+bun run /path/to/better-symphony/src/cli.ts -w workflows/dev.md
 ```
 
 ### CLI Flags
