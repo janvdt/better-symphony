@@ -222,7 +222,7 @@ export class LinearClient {
       state: node.state.name,
       branch_name: node.branchName,
       url: node.url,
-      labels: node.labels.nodes.map((l) => l.name.toLowerCase()),
+      labels: node.labels.nodes.map((l: any) => l.parent?.name ? `${l.parent.name}:${l.name}`.toLowerCase() : l.name.toLowerCase()),
       blocked_by: blockers,
       children,
       comments,

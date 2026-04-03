@@ -71,7 +71,7 @@ export class LinearTracker implements Tracker {
       state: raw.state.name,
       branch_name: null,
       url: null,
-      labels: raw.labels.nodes.map((l) => l.name),
+      labels: raw.labels.nodes.map((l: any) => l.parent?.name ? `${l.parent.name}:${l.name}` : l.name),
       blocked_by: [],
       children: raw.children.nodes.map((c, idx) => ({
         id: c.id,

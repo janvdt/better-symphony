@@ -128,6 +128,8 @@ export interface AgentConfig {
   yolobox_arguments?: string[];
   /** Permission mode (default: "acceptEdits") */
   permission_mode?: string;
+  /** Model override (e.g., "anthropic/claude-sonnet-4-20250514"). Passed via --model to the agent binary */
+  model?: string;
   /** Append to system prompt */
   append_system_prompt?: string;
 }
@@ -177,6 +179,7 @@ export interface ServiceConfig {
     yolobox: boolean;
     yolobox_arguments: string[];
     permission_mode: string;
+    model: string | null;
     append_system_prompt: string | null;
   };
 }

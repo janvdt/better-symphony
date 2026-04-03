@@ -155,10 +155,25 @@ export class MultiOrchestrator {
         entry.orchestrator.refreshConfig();
       }
 
-      // Step 4: Fetch candidates — group by project_slug to minimize API calls
+      // Step 4: Fetch candidates
+      // Split workflows into Linear (shared fetch by project_slug) and GitHub (individual fetch)
       const slugGroups = this.groupByProjectSlug();
+      const githubEntries: WorkflowEntry[] = [];
 
+      for (const entry of this.entries) {
+        const config = entry.orchestrator.getServiceConfig();
+        if (config && (config.tracker.kind === "github-pr" || config.tracker.kind === "github-issues")) {
+          githubEntries.push(entry);
+        }
+      }
+
+      // Linear workflows: batch fetch by project_slug
       for (const [slug, group] of slugGroups) {
+        // Skip GitHub workflows (they have empty project_slug)
+        if (group.some(({ config }) => config.tracker.kind === "github-pr" || config.tracker.kind === "github-issues")) {
+          continue;
+        }
+
         // Union all active_states across workflows targeting this slug
         const unionStates = new Set<string>();
         for (const { config } of group) {
@@ -186,6 +201,18 @@ export class MultiOrchestrator {
 
         if (totalDispatched > 0) {
           logger.info(`Dispatched ${totalDispatched} issues across workflows for ${slug}`);
+        }
+      }
+
+      // GitHub workflows: each fetches its own candidates via its tracker
+      for (const entry of githubEntries) {
+        try {
+          const issues = await entry.orchestrator.fetchAndDispatch();
+          if (issues > 0) {
+            logger.info(`Dispatched ${issues} issues for GitHub workflow`);
+          }
+        } catch (err) {
+          logger.error(`GitHub workflow poll failed: ${(err as Error).message}`);
         }
       }
     } catch (err) {

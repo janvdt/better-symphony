@@ -31,6 +31,7 @@ import { GitHubIssuesTracker } from "../tracker/github-issues-tracker.js";
 import type { Tracker } from "../tracker/interface.js";
 import { WorkspaceManager } from "../workspace/manager.js";
 import { ClaudeRunner } from "../agent/claude-runner.js";
+import { OpenCodeRunner } from "../agent/opencode-runner.js";
 import { parseRateLimits } from "../agent/session.js";
 import { logger } from "../logging/logger.js";
 import * as state from "./state.js";
@@ -83,10 +84,17 @@ export class Orchestrator {
     if (!this.config) throw new Error("Config not initialized");
 
     if (this.isGitHubTracker() && this.tracker) {
-      return this.tracker.fetchCandidates({
-        excludedLabels: this.config.tracker.excluded_labels,
-        requiredLabels: this.config.tracker.required_labels,
-      });
+      try {
+        const issues = await this.tracker.fetchCandidates({
+          excludedLabels: this.config.tracker.excluded_labels,
+          requiredLabels: this.config.tracker.required_labels,
+        });
+        logger.info(`[${this.workflowName}] GitHub tracker returned ${issues.length} candidates`);
+        return issues;
+      } catch (err) {
+        logger.error(`[${this.workflowName}] GitHub tracker fetch failed: ${(err as Error).message}`);
+        return [];
+      }
     }
 
     if (!this.linearClient) throw new Error("Linear client not initialized");
@@ -114,7 +122,7 @@ export class Orchestrator {
       state: raw.state.name,
       branch_name: null,
       url: null,
-      labels: raw.labels.nodes.map((l) => l.name),
+      labels: raw.labels.nodes.map((l: any) => l.parent?.name ? `${l.parent.name}:${l.name}` : l.name),
       blocked_by: [],
       children: raw.children.nodes.map((c, idx) => ({
         id: c.id,
@@ -649,7 +657,14 @@ export class Orchestrator {
           (s) => s.trim().toLowerCase() === freshState
         );
 
-        if (isTerminal) {
+        // For GitHub trackers, also consider the agent done if an excluded label was added
+        // (e.g., "review:complete" on a PR review workflow)
+        const hasExcludedLabel = freshIssue && config.tracker.excluded_labels.length > 0 &&
+          config.tracker.excluded_labels.some((el) =>
+            freshIssue.labels.some((l) => l.toLowerCase() === el.toLowerCase())
+          );
+
+        if (isTerminal || hasExcludedLabel) {
           runAttempt.status = "Succeeded";
           logger.info(`Worker done for ${issue.identifier} (issue is ${freshIssue!.state})`, {
             issue_id: issue.id,
@@ -984,15 +999,15 @@ export class Orchestrator {
   ): Promise<void> {
     const binary = config.agent.binary;
 
-    if (binary === "claude") {
-      let transcriptPath: string | undefined;
-      if (this.debug) {
-        const logsDir = join(homedir(), ".symphony", "logs");
-        mkdirSync(logsDir, { recursive: true });
-        const ts = new Date().toISOString().replace(/[:.]/g, "-");
-        transcriptPath = join(logsDir, `transcript-${issue.identifier}-${ts}.md`);
-      }
+    let transcriptPath: string | undefined;
+    if (this.debug) {
+      const logsDir = join(homedir(), ".symphony", "logs");
+      mkdirSync(logsDir, { recursive: true });
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      transcriptPath = join(logsDir, `transcript-${issue.identifier}-${ts}.md`);
+    }
 
+    if (binary === "claude") {
       const runner = new ClaudeRunner({
         config,
         issue,
@@ -1000,12 +1015,24 @@ export class Orchestrator {
         prompt,
         attempt,
         onEvent: (event) => {
-          // Link runner session to running entry for stall detection.
-          // Without this, entry.session stays null and stall detection falls back to
-          // entry.attempt.started_at, causing ralph loops to be killed after stall_timeout_ms
-          // even when the agent is actively working on subtasks.
-          // NOTE: In ralph_loop mode, each subtask gets a new runner/session, so we must
-          // always update (not just when null) to track the current subtask's activity.
+          const entry = this.orchState?.running.get(issue.id);
+          if (entry) {
+            entry.session = runner.getSession();
+          }
+          this.handleAgentEvent(issue.id, event);
+        },
+        abortSignal: abortController.signal,
+        transcriptPath,
+      });
+      await runner.run();
+    } else if (binary === "opencode") {
+      const runner = new OpenCodeRunner({
+        config,
+        issue,
+        workspacePath,
+        prompt,
+        attempt,
+        onEvent: (event) => {
           const entry = this.orchState?.running.get(issue.id);
           if (entry) {
             entry.session = runner.getSession();
@@ -1017,7 +1044,7 @@ export class Orchestrator {
       });
       await runner.run();
     } else {
-      throw new Error(`Unsupported binary: ${binary}. Only "claude" is currently implemented.`);
+      throw new Error(`Unsupported binary: ${binary}. Only "claude" and "opencode" are currently implemented.`);
     }
   }
 
@@ -1344,7 +1371,7 @@ export class Orchestrator {
   dispatchFromIssues(issues: Issue[]): number {
     if (!this.config || !this.orchState) return 0;
 
-    const { eligible } = scheduler.selectCandidates(
+    const { eligible, skipped } = scheduler.selectCandidates(
       issues,
       this.orchState,
       this.config
@@ -1355,6 +1382,10 @@ export class Orchestrator {
       retrying: this.orchState.retry_attempts.size,
     });
 
+    for (const { issue, reason } of skipped) {
+      logger.info(`[${this.workflowName}] skipped ${issue.identifier}: ${reason}`);
+    }
+
     let dispatched = 0;
     for (const issue of eligible) {
       if (scheduler.getAvailableSlots(this.orchState, this.config) <= 0) break;
@@ -1362,6 +1393,14 @@ export class Orchestrator {
     }
 
     return dispatched;
+  }
+
+  /** Fetch candidates via this orchestrator's own tracker and dispatch. Used by MultiOrchestrator for GitHub workflows. */
+  async fetchAndDispatch(): Promise<number> {
+    if (!this.config || !this.orchState) return 0;
+    this.refreshConfig();
+    const issues = await this.fetchCandidateIssues();
+    return this.dispatchFromIssues(issues);
   }
 
   /** Get current service config (for MultiOrchestrator coordination) */

@@ -164,7 +164,7 @@ export const GET_ISSUE = `
       description
       state { id name type }
       team { id }
-      labels { nodes { id name } }
+      labels { nodes { id name parent { name } } }
       children {
         nodes {
           id identifier title description priority
@@ -228,7 +228,7 @@ export const CREATE_COMMENT = `
 export const GET_ISSUE_LABELS = `
   query GetIssueLabels($issueId: String!) {
     issue(id: $issueId) {
-      labels { nodes { id name } }
+      labels { nodes { id name parent { name } } }
     }
   }
 `;
@@ -244,7 +244,7 @@ export const FIND_STATE_ID = `
 export const GET_TEAM_LABELS = `
   query GetTeamLabels($teamId: String!) {
     team(id: $teamId) {
-      labels { nodes { id name color } }
+      labels { nodes { id name color parent { name } } }
     }
   }
 `;

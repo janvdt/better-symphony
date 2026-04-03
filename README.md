@@ -1,6 +1,6 @@
 # Better Symphony
 
-A headless coding agent orchestrator that polls issue trackers (Linear, GitHub Issues, GitHub PRs) for work items, dispatches AI agents (Claude Code), and manages the full development lifecycle.
+A headless coding agent orchestrator that polls issue trackers (Linear, GitHub Issues, GitHub PRs) for work items, dispatches AI agents (Claude Code, OpenCode), and manages the full development lifecycle.
 
 ## Installation
 
@@ -75,7 +75,7 @@ Each workflow specifies which labels to watch for (e.g., `agent:dev`), so multip
 - **`src/orchestrator/`** - Poll loop, scheduling, concurrency control, and multi-workflow coordination
 - **`src/tracker/`** - Tracker implementations (Linear GraphQL, GitHub Issues, GitHub PRs via `gh` CLI)
 - **`src/workspace/`** - Per-issue workspace creation/cleanup and shell hooks
-- **`src/agent/`** - Agent harness (spawns Claude CLI, parses stream-json output)
+- **`src/agent/`** - Agent harnesses (Claude CLI with stream-json, OpenCode CLI with JSON output)
 - **`src/config/`** - YAML frontmatter + Liquid template parsing
 - **`src/logging/`** - Structured logging
 
@@ -228,20 +228,44 @@ You are reviewing **PR #{{ issue.number }}**: {{ issue.title }}
 **Files changed:** {{ issue.files_changed }}
 
 ## Description
-{{ issue.body | default: "No description provided" }}
+{{ issue.description | default: "No description provided" }}
 
 When done, use `gh pr edit {{ issue.number }} --add-label "review:complete"` to mark completion.
 ```
 
 The GitHub PR tracker exposes additional template variables: `issue.branch_name`, `issue.base_branch`, `issue.author`, `issue.files_changed`, and `issue.comments`.
 
-## Yolobox Support
+## Agent Binaries
 
-Better Symphony has first-class support for [Yolobox](https://github.com/finbarr/yolobox), a Docker-based sandbox for running agents. When enabled, the agent binary is launched inside a Yolobox container.
+Better Symphony supports multiple agent binaries. Set the `binary` field in your workflow's `agent` config:
+
+### Claude (default)
+
+Uses [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) with `--output-format stream-json` for real-time event streaming.
 
 ```yaml
 agent:
-  harness: claude                           # which agent to run: claude, codex, opencode
+  binary: claude
+  max_concurrent_agents: 2
+```
+
+### OpenCode
+
+Uses [OpenCode CLI](https://github.com/opencode-ai/opencode) with `--format json` for structured JSON event output. The prompt is piped via stdin.
+
+```yaml
+agent:
+  binary: opencode
+  max_concurrent_agents: 2
+```
+
+## Yolobox Support
+
+Better Symphony has first-class support for [Yolobox](https://github.com/finbarr/yolobox), a Docker-based sandbox for running agents. When enabled, the agent binary is launched inside a Yolobox container. Currently supported for the `claude` binary only.
+
+```yaml
+agent:
+  binary: claude
   yolobox: true
   yolobox_arguments: ["--claude-config"]    # extra args passed to yolobox before the agent flags
 ```

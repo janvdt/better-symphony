@@ -217,6 +217,7 @@ export function buildServiceConfig(workflow: WorkflowDefinition): ServiceConfig 
       yolobox: cfg.agent?.yolobox === true,
       yolobox_arguments: Array.isArray(cfg.agent?.yolobox_arguments) ? cfg.agent.yolobox_arguments : [],
       permission_mode: cfg.agent?.permission_mode || DEFAULT_PERMISSION_MODE,
+      model: cfg.agent?.model || null,
       append_system_prompt: cfg.agent?.append_system_prompt || null,
     },
   };

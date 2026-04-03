@@ -146,6 +146,10 @@ export class ClaudeRunner {
       claudeArgs.push("--max-turns", String(config.agent.max_turns));
     }
 
+    if (config.agent.model) {
+      claudeArgs.push("--model", config.agent.model);
+    }
+
     // Build system prompt: built-in CLI docs + optional user-provided prompt
     const systemPromptParts: string[] = [getLinearSystemPrompt(), getGitHubSystemPrompt()];
     if (config.agent.append_system_prompt) {
